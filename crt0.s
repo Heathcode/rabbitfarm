@@ -216,7 +216,7 @@ _exit:
 	sta PPU_SCROLL
 	sta PPU_SCROLL
 
-	jmp _main			;no parameters
+	;jmp _main			;no parameters
 
 	.include "neslib.s"
 
