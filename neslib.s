@@ -600,7 +600,7 @@ _sfx_play:
 	lda @sfxPriority,x
 	tax
 	jsr popa
-	jmp FamiToneSfxStart
+	;jmp FamiToneSfxStart
 
 @sfxPriority:
 	.byte FT_SFX_CH0,FT_SFX_CH1,FT_SFX_CH2,FT_SFX_CH3
