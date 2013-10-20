@@ -15,6 +15,67 @@ local function asm_assembly()
       __code = {},
       __code_size = 0,
       curline = 1,
+      x = "",
+      y = "",
+      a = "",
+      s = "",
+      pc = "",
+      sp = "",
+      io = "",
+
+      __op = function(asm, opcode, args)
+         asm:add_line()
+         asm.curline.command = "\t"..opcode
+         local size = 1
+
+         if args then
+	         asm.curline.args = args
+                 size = size + 1
+                 -- size should go up by 1 more if absolute addressing
+         end
+
+         asm.__code_size = asm.__code_size + size
+      end,
+
+      cld = function(asm)
+         asm:__op("cld")
+      end,
+
+      __inc_register = function(asm, reg)
+         local x,_ = string.gsub(asm[reg], "%$", "")
+         x,_ = string.gsub(x, "#", "")
+         x = tonumber(x, 16)
+         if x == 255 then x = -1 end
+         x = "$"..string.format("%x", x + 1)
+         asm[reg] = x
+      end,
+
+      inx = function(asm)
+         asm:__inc_register("x")
+         asm:__op("inx")
+      end,
+
+      iny = function(asm)
+         asm:__inc_register("y")
+         asm:__op("iny")
+      end,
+
+      ldx = function(asm, args)
+         asm.x = args
+         asm:__op("ldx", args)
+      end,
+
+      sei = function(asm)
+         asm:__op("sei")
+      end,
+
+      stx = function(asm, args)
+         asm:__op("stx", args)
+      end,
+
+      txs = function(asm)
+         asm:__op("txs")
+      end,
 
 
 
@@ -156,8 +217,8 @@ local function asm_assembly()
             local list = {v.label, v.clabel, v.command, v.args, v.comment}
             for k,v in pairs(list) do
                if string.len(v) > 0 then
-               s = s..v
-               if k == 3 or k == 4 then s = s.."\t" end
+                  s = s..v
+                  if k == 3 or k == 4 then s = s.."\t" end
                end
             end
 
