@@ -1,18 +1,16 @@
 local sym = {
-	nes_prg_banks = 1,
-	nes_chr_banks = 1,
-	nes_mirroring = 0,
-	nes_mapper = 0,
+	nes_prg_banks = "$01",
+	nes_chr_banks = "$01",
+	nes_mirroring = "$00",
+	nes_mapper = "$00",
 
-	ppu_ctrl = 0x2000,
+	ppu_ctrl = "$2000",
 }
 
 if arg then
 	if arg[1] == "generate" then
 		for k,v in pairs(sym) do
-			if type(v) == "number" then
-				print(string.upper(k.." = $"..string.format("%x", v)))
-			end
+			print(string.upper(k.." = "..v))
 		end
 	end
 end

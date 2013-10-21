@@ -2,10 +2,10 @@ return function(asm, sym)
 	asm:segment("HEADER") do
 		local header = {
 			0x4e, 0x45, 0x53, 0x1a,
-			sym.nes_prg_banks,
-			sym.nes_chr_banks,
-			bit32.bor(sym.nes_mirroring, bit32.lrotate(sym.nes_mapper, 4)),
-			bit32.band(sym.nes_mapper, 0xf0),
+			asm:tonumber(sym.nes_prg_banks),
+			asm:tonumber(sym.nes_chr_banks),
+			bit32.bor(asm:tonumber(sym.nes_mirroring), bit32.lrotate(asm:tonumber(sym.nes_mapper), 4)),
+			bit32.band(asm:tonumber(sym.nes_mapper), 0xf0),
 			0, 0, 0, 0, 0, 0, 0, 0,
 		}
 
