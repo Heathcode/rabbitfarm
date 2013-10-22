@@ -15,38 +15,133 @@ local function asm_assembly()
 		__code = {},
 		__code_size = 0,
 		curline = 1,
-		x = "",	-- index register x
-		y = "",	-- index register y 
-		a = "",	-- accumulator
-		s = "",	-- stack pointer
-		p = "",	-- processor status register
-		pc = "",	-- program counter
-		pch = "",	-- program counter high
-		pcl = "",	-- program counter low
-		mem = {},	-- memory
+		x = 0x00,	-- index register x
+		y = 0x00,	-- index register y 
+		a = 0x00,	-- accumulator
+		s = 0x00,	-- stack pointer
+		p = {n=0, v=0, b=0, d=0, i=0, z=0, c=0},	-- processor status register
+		pc = 0x00,	-- program counter
+		pch = 0x00,	-- program counter high
+		pcl = 0x00,	-- program counter low
+		__mem = {},	-- memory
 
 
 
-		__op = function(asm, opcode, args)
+		mget = function(asm, address)
+			v = asm.__mem[address]
+			if v then
+				return v
+			else
+				v = 0x00
+				asm.__mem[address] = v
+				return v
+			end
+		end,
+
+
+
+		mset = function(asm, address, v)
+			if not type(v) == "number" then
+				error("number 0-255 expected as arg #3 to mset")
+			elseif v > 255 or v < 0 then
+				error("number 0-255 expected as arg #3 to mset")
+			end
+				
+			asm.__mem[address] = v
+			return v
+		end,
+
+
+
+		__op = function(asm, opcode, oper)
 			asm:add_line()
 			asm.curline.command = "\t"..opcode
-			local size = 1
+			size = 1
+			val = 0
 
-			if args then
-				asm.curline.args = args
-				size = size + 1
-				-- technically not true, because "asl a" is one byte
-				-- size should go up by 1 more if absolute addressing
+			if oper then
+				asm.curline.args = oper
+
+				if not oper == "a" then
+					size = size + 1
+
+					address = 0x0000
+					constant = 0x00
+
+					for wordaddr in string.gmatch(oper, "%(-#-%$-(%w)%)-,-%s-[xy]-%)-") do
+						if wordaddr > 0xff then
+							size = size + 1
+							address = wordaddr
+						end
+					end
+
+					if string.find(oper, "^[+-]?%$%w+$") then
+						--absolute mode
+						val = asm:mget(address)
+					end
+				end
 			end
 
 			asm.__code_size = asm.__code_size + size
+			return val
 		end,
 
 
 
 		__inc_register = function(asm, reg)
-			local x = asm:tonumber(asm[reg])
-			asm[reg] = asm:tostring(x + 1)
+			asm[reg] = asm[reg] + 1
+		end,
+
+
+
+		adc = function(asm, oper)
+			val = asm:__op("adc", oper)
+			v = bit32.bor(asm.a, 0x80)
+			asm.a = asm.a + val
+
+			if asm.a > 0xff then
+				asm.a = 0xff
+				asm.p.c = 1
+			end
+
+			asm.p.v = bit32.bor(asm.a, v)
+			asm.p.n = bit32.band(asm.a, 0x80)
+			asm.p.z = bit32.bxor(bit32.band(asm.a, 0x00), asm.a)
+		end,
+
+
+
+		and_ = function(asm, oper)
+			val = asm:__op("and", oper)
+			asm.a = bit32.band(asm.a, val)
+			asm.p.z = bit32.bxor(bit32.band(asm.a, 0x00), asm.a)
+		end,
+
+
+
+		asl = function(asm, oper)
+			oper = asm:__op("asl", oper)
+			v = 0
+			if oper == "a" then
+				v = asm.a
+			else
+				v = asm.mget(oper)
+			end
+
+			-- set the processor flags
+			asm.p.c = bit32.band(v, 0x80)
+			asm.p.n = bit32.band(v, 0x40)
+
+			-- okay now do the shift
+			v = bit32.lshift(v, 1)
+			if v > 0xff then v = 0x00 end
+			if oper == "a" then
+				asm.a = v
+			else
+				asm:mset(oper, v)
+			end
+
+			asm.p.z = bit32.bxor(bit32.band(v, 0x00), v)
 		end,
 
 
@@ -113,7 +208,7 @@ local function asm_assembly()
 		--include = function(asm, script)
 		--	if asm.curline.command == "" then
 		--		asm.curline.command = ".include"
-		--		asm.curline.args = "\""..script.."\""
+		--		asm.curline.oper = "\""..script.."\""
 		--	else
 		--		asm:add_line()
 		--		return asm:include(script)
@@ -225,7 +320,6 @@ local function asm_assembly()
 	} --asm = { stuff }
 
 	local opcodes = {
-		"adc", "and", "asl",
 		"bcc", "bcs", "beq", "bit", "bmi", "bne", "bpl", "brk", "bvc", "bvs",
 		"clc", "cld", "cli", "clv", "cmp", "cpx", "cpy",
 		"dec", "dex", "dey",
@@ -246,8 +340,8 @@ local function asm_assembly()
 	}
 
 	for k,v in pairs(opcodes) do
-		asm[v] = function(asm, args)
-			asm:__op(v, args)
+		asm[v] = function(asm, oper)
+			asm:__op(v, oper)
 		end
 	end
 
@@ -259,20 +353,6 @@ local function asm_assembly()
 				asm:__op(v)
 			end
 		end
-	end
-
-	asm.adc = function(asm, args)
-		asm:__op(asm, "adc", args)
-
-		m = asm.mem[args]
-		if m == nil then
-			m = "$00"
-			asm.mem[args] = m
-		end
-
-		a = asm:tonumber(asm.a)
-		m = asm:tonumber(m)
-		asm.a = asm:tostring(a + m)
 	end
 
 	asm:add_line()

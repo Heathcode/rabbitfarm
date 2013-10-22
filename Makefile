@@ -1,8 +1,7 @@
 all:
 	lua symbols.lua generate > symbols.s
 	lua main.lua ca65.lua > main.s
-	ca65 main.s
-	cl65 -o RabbitFarm.nes -C nes.cfg main.o
+	cl65 -o RabbitFarm.nes -C nes.cfg main.s
 
 clean:
 	rm -f symbols.s
