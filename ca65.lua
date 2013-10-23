@@ -3,6 +3,227 @@ local asm_byte="\t.byte "
 local asm_word="\t.word "
 local asm_label=function(name) return name..":" end
 local asm_clabel=function(name) return "@"..name..":" end
+local asm_opcodes = {
+	-- Group 1 instructions. See MOS 6500 Manual A.1
+	"adc", "and_", "cmp", "eor", "lda", "ora", "sbc", "sta",
+
+	-- Group 2 instructions. See MOS 6500 Manual A.2
+	"lsr", "asl", "rol", "ror", "inc", "dec", "ldx", "stx",
+
+	-- Group 3 instructions. See MOS 6500 Manual A.3
+	"ldy", "sty", "cpy", "cpx", "inx", "iny", "dex", "dey",	-- x and y
+	"bcc", "bcs", "beq", "bmi", "bne", "bpl", "bpc", "bps",		-- branch
+	"clc", "sec", "cld", "sed", "cli", "sei", "clv",		-- flags
+	-- in alphabetical order, all the remaining instructions
+	"bit", "brk", "jmp", "jsr", "lsr", "nop", "pha", "php",
+	"pla", "plp", "rti", "rts", "tax", "tay", "tsx", "txa",
+	"txs", "tya",
+}
+
+
+
+local function asm_immediate(asm, opcode, oper, cmd)
+	if string.find(oper, "^[+-]?#%$%x%x$") then
+		local size = 2
+		local commands = {
+			get = function() return asm:tonumber(oper) end,
+			set = function() return end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "immediate"
+		end
+	end
+end
+
+local function asm_zeropage(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%$%x%x$") then
+		local size = 2
+		local commands = {
+			get = function() return asm:mget(oper) end,
+			set = function() asm:mset(oper, cmdarg) end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "zeropage"
+		end
+	end
+end
+
+local function asm_zeropage_x(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%$%x%x%s-,%s-x$") then
+		local size = 2
+		s,_ = string.gsub(oper, ",%s-x", "")
+		local commands = {
+			get = function() return asm:mget(asm:tostring(asm:tonumber(s) + asm.x)) end,
+			set = function() asm:mset(asm:tostring(asm:tonumber(s) + asm.x), cmdarg) end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "zeropage_x"
+		end
+	end
+end
+
+local function asm_zeropage_y(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%$%x%x%s-,%s-y$") then
+		local size = 2
+		s,_ = string.gsub(oper, ",%s-x", "")
+		local commands = {
+			get = function() return asm:mget(asm:tostring(asm:tonumber(s) + asm.y)) end,
+			set = function() asm:mset(asm:tostring(asm:tonumber(s) + asm.y), cmdarg) end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "zeropage_y"
+		end
+	end
+end
+
+local function asm_absolute(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%$%x%x%x%x$") then
+		local size = 3
+		local commands = {
+			get = function() return asm:mget(oper) end,
+			set = function() asm:mset(oper, cmdarg) end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "absolute"
+		end
+	end
+end
+
+local function asm_absolute_x(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%$%x%x%x%x%s-,%s-x$") then
+		local size = 3
+		s,_ = string.gsub(oper, ",%s-x", "")
+		local commands = {
+			get = function() return asm:mget(asm:tostring(asm:tonumber(s) + asm.x)) end,
+			set = function() asm:mset(asm:tostring(asm:tonumber(s) + asm.x), cmdarg) end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "absolute_x"
+		end
+	end
+end
+
+local function asm_absolute_y(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%$%x%x%x%x%s-,%s-y$") then
+		local size = 3
+		s,_ = string.gsub(oper, ",%s-y", "")
+		local commands = {
+			get = function() return asm:mget(asm:tostring(asm:tonumber(s) + asm.x)) end,
+			set = function() asm:mset(asm:tostring(asm:tonumber(s) + asm.x), cmdarg) end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "absolute_y"
+		end
+	end
+end
+
+local function asm_indirect_y(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%(%$%x%x%),%s-y$") then
+		local size = 3
+		s,_ = string.gsub(oper, "),%s-y", "")
+		s,_ = string.gsub(s, "(", "")
+		local commands = {
+			get = function()
+				local addr = asm:tostring(asm:mget(asm:tonumber(s) + 1))
+				addr = addr..string.format("%x", asm:mget(s))
+				addr = asm:tostring(asm:tonumber(addr) + asm.y)
+				return asm:mget(addr)
+			end,
+
+			set = function()
+				local addr = asm:tostring(asm:mget(asm:tonumber(s) + 1))
+				addr = addr..string.format("%x", asm:mget(s))
+				addr = asm:tostring(asm:tonumber(addr) + asm.y)
+				asm:mset(addr, cmdarg)
+			end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "indirect_y"
+		end
+	end
+end
+
+local function asm_indirect_x(asm, opcode, oper, cmd, cmdarg)
+	if string.find(oper, "^[+-]?%(%$%x%x,%s-x%)$") then
+		local size = 3
+		s,_ = string.gsub(oper, ",%s-x)", "")
+		s,_ = string.gsub(s, "(", "")
+		local commands = {
+			get = function()
+				local addr = asm:tostring(asm:mget(asm:tonumber(s) + asm.x + 1))
+				addr = addr..string.format("%x", asm:mget(s + asm.x))
+				return asm:mget(addr)
+			end,
+
+			set = function()
+				local addr = asm:tostring(asm:mget(asm:tonumber(s) + asm.x + 1))
+				addr = addr..string.format("%x", asm:mget(s + asm.x))
+				asm:mset(addr, cmdarg)
+			end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "indirect_x"
+		end
+	end
+end
+
+local function asm_accumulator(asm, opcode, oper, cmd, cmdarg)
+	opcodes = {asl=1, lsr=1, lor=1, ror=1}
+
+	if opcodes[opcode] or oper == "a" then
+		local size = 1
+		local commands = {
+			get = function() return asm.a end,
+			set = function() asm.a = cmdarg end,
+		}
+
+		if commands[cmd] then
+			return commands.cmd()
+		else
+			return size, "accumulator"
+		end
+	end
+end
+
+local asm_modes = {
+	immediate = asm_immediate,
+	zeropage = asm_zeropage,
+	zeropage_x = asm_zeropage_x,
+	zeropage_y = asm_zeropage_y,
+	absolute_x = asm_absolute_x,
+	absolute_y = asm_absolute_y,
+	indirect_x = asm_indirect_x,
+	indirect_y = asm_indirect_y,
+	accumulator = asm_accumulator,
+}
+
 
 
 
@@ -53,95 +274,32 @@ local function asm_assembly()
 
 
 
+		-----------------------------------------------------------------------------
+		-- asm:__op(opcode, oper)
+		-- Root function of each instruction. Increases size and determines mode.
+		-----------------------------------------------------------------------------
 		__op = function(asm, opcode, oper)
 			asm:add_line()
-			asm.curline.command = "\t"..opcode
-			size = 1
-			val = 0
+			o,_ = string.gsub(opcode, "_", "")
+			asm.curline.command = "\t"..o
 
-			if oper then
-				asm.curline.args = oper
+			if oper == nil then oper = "" end
+			asm.curline.args = oper
 
-				if not oper == "a" then
-					size = size + 1
+			for k,v in pairs(asm_opcodes) do
+				if v == opcode then
+					size = 0
+					mode = 0
 
-					address = 0x0000
-					constant = 0x00
-
-					for wordaddr in string.gmatch(oper, "%(-#-%$-(%w)%)-,-%s-[xy]-%)-") do
-						if wordaddr > 0xff then
-							size = size + 1
-							address = wordaddr
-						end
+					for k,v in pairs(asm_modes) do
+						size, mode = v(asm, opcode, oper)
 					end
 
-					if string.find(oper, "^[+-]?%$%w+$") then
-						--absolute mode
-						val = asm:mget(address)
-					end
+					if size == nil then size = 1 end
+					asm.__code_size = asm.__code_size + size
+					return mode
 				end
 			end
-
-			asm.__code_size = asm.__code_size + size
-			return val
-		end,
-
-
-
-		__inc_register = function(asm, reg)
-			asm[reg] = asm[reg] + 1
-		end,
-
-
-
-		adc = function(asm, oper)
-			val = asm:__op("adc", oper)
-			v = bit32.bor(asm.a, 0x80)
-			asm.a = asm.a + val
-
-			if asm.a > 0xff then
-				asm.a = 0xff
-				asm.p.c = 1
-			end
-
-			asm.p.v = bit32.bor(asm.a, v)
-			asm.p.n = bit32.band(asm.a, 0x80)
-			asm.p.z = bit32.bxor(bit32.band(asm.a, 0x00), asm.a)
-		end,
-
-
-
-		and_ = function(asm, oper)
-			val = asm:__op("and", oper)
-			asm.a = bit32.band(asm.a, val)
-			asm.p.z = bit32.bxor(bit32.band(asm.a, 0x00), asm.a)
-		end,
-
-
-
-		asl = function(asm, oper)
-			oper = asm:__op("asl", oper)
-			v = 0
-			if oper == "a" then
-				v = asm.a
-			else
-				v = asm.mget(oper)
-			end
-
-			-- set the processor flags
-			asm.p.c = bit32.band(v, 0x80)
-			asm.p.n = bit32.band(v, 0x40)
-
-			-- okay now do the shift
-			v = bit32.lshift(v, 1)
-			if v > 0xff then v = 0x00 end
-			if oper == "a" then
-				asm.a = v
-			else
-				asm:mset(oper, v)
-			end
-
-			asm.p.z = bit32.bxor(bit32.band(v, 0x00), v)
 		end,
 
 
@@ -204,16 +362,18 @@ local function asm_assembly()
 
 		-----------------------------------------------------------------------------
 		-- asm:include("foo.s")
+		-- At the moment, size of included assembly is not calculated.
+		-- But that is possible...
 		-----------------------------------------------------------------------------
-		--include = function(asm, script)
-		--	if asm.curline.command == "" then
-		--		asm.curline.command = ".include"
-		--		asm.curline.oper = "\""..script.."\""
-		--	else
-		--		asm:add_line()
-		--		return asm:include(script)
-		--	end
-		--end,
+		include = function(asm, script)
+			if asm.curline.command == "" then
+				asm.curline.command = ".include"
+				asm.curline.oper = "\""..script.."\""
+			else
+				asm:add_line()
+				return asm:include(script)
+			end
+		end,
 
 
 
@@ -319,38 +479,11 @@ local function asm_assembly()
 		end,
 	} --asm = { stuff }
 
-	local opcodes = {
-		"bcc", "bcs", "beq", "bit", "bmi", "bne", "bpl", "brk", "bvc", "bvs",
-		"clc", "cld", "cli", "clv", "cmp", "cpx", "cpy",
-		"dec", "dex", "dey",
-		"eor",
-		"inc", "inx", "iny",
-		"jmp", "jsr",
-		"lda", "ldx", "ldy", "lsr",
-		"nop",
-		"ora",
-		"pha", "php", "pla", "plp",
-		"rol", "ror", "rti", "rts",
-		"sbc", "sec", "sed", "sei", "sta", "stx", "sty",
-		"tax", "tay", "tsx", "txa", "txs", "tya",
-	}
-
-	local opcode_incrementers = {
-		"inc", "inx", "iny",
-	}
-
-	for k,v in pairs(opcodes) do
-		asm[v] = function(asm, oper)
-			asm:__op(v, oper)
-		end
-	end
-
-	for k,v in pairs(opcode_incrementers) do
-		for reg in string.gmatch(v, "in(%a)") do
-			if reg == "c" then reg = "a" end
-			asm[v] = function(asm)
-				asm:__inc_register(reg)
-				asm:__op(v)
+	-- Generate a generic function for each unimplemented instruction
+	for k,v in pairs(asm_opcodes) do
+		if asm[v] == nil then
+			asm[v] = function(asm, oper)
+				asm:__op(v, oper)
 			end
 		end
 	end
