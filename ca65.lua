@@ -368,10 +368,25 @@ local function asm_assembly()
 		include = function(asm, script)
 			if asm.curline.command == "" then
 				asm.curline.command = ".include"
-				asm.curline.oper = "\""..script.."\""
+				asm.curline.args = "\""..script.."\""
 			else
 				asm:add_line()
 				return asm:include(script)
+			end
+		end,
+
+
+
+		-----------------------------------------------------------------------------
+		-- asm:incbin("foo.bar")
+		-----------------------------------------------------------------------------
+		incbin = function(asm, file)
+			if asm.curline.command == "" then
+				asm.curline.command = ".incbin"
+				asm.curline.args = "\""..file.."\""
+			else
+				asm:add_line()
+				return asm:incbin(file)
 			end
 		end,
 
