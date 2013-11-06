@@ -1,18 +1,27 @@
 local function main(assembler)
-	local asm = assembler.assembly()
-	local symbols = dofile("symbols.lua")
+	local asm = assembler.assembly(dofile("sym.lua"))
+	asm = dofile("basic.lua")(asm)
 	local hello = dofile("hello.lua")
-	local startup = dofile("startup.lua")
+	local poweron = dofile("poweron.lua")
 
-	dofile("header.lua")(asm, symbols)
+	dofile("header.lua")(asm)
+
 	asm:segment("STARTUP") do
-		hello.startup(asm, symbols)
-		startup.startup(asm, symbols)
+		hello.init(asm)
+
+		poweron.go(asm)
+		hello.go(asm)
+
+		poweron.lib(asm)
+		hello.lib(asm)
 	end
+
 	asm:segment("VECTORS")
+
 	asm:segment("SAMPLES")
+
 	asm:segment("CHARS") do
-		hello.chars(asm, symbols)
+		hello.chars(asm)
 	end
 
 	s = asm:write()

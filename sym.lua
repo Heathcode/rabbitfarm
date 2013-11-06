@@ -5,6 +5,8 @@ local sym = {
 	nes_mapper = "$00",
 
 	ppu_ctrl = "$2000",
+
+	i = "$00",
 }
 
 if arg then

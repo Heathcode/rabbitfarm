@@ -231,7 +231,7 @@ local asm_modes = {
 -- asm_assembly()
 -- Returns an interface for adding to and writing the assembly output
 -----------------------------------------------------------------------------
-local function asm_assembly()
+local function asm_assembly(sym)
 	local asm = {
 		__code = {},
 		__code_size = 0,
@@ -245,6 +245,7 @@ local function asm_assembly()
 		pch = 0x00,	-- program counter high
 		pcl = 0x00,	-- program counter low
 		__mem = {},	-- memory
+		sym = sym,	-- symbol table from parameter
 
 
 
@@ -328,6 +329,7 @@ local function asm_assembly()
 		add_comment = function(asm, comment)
 			asm.__code[#asm.__code].comment = asm_comment..comment
 		end,
+		comment = function(asm, comment) return asm:add_comment(comment) end,
 
 
 
@@ -343,6 +345,9 @@ local function asm_assembly()
 			end
 			asm.__code[#asm.__code].label = label
 			local l,_ = string.gsub(label, ":", "")
+
+			asm.sym[name] = l
+
 			return l
 		end,
 		label = function(asm, name) return asm:add_label(name) end,

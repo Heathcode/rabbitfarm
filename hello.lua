@@ -2,55 +2,45 @@ local hello = "BEN HEATH"
 
 
 
-local function load_palette(asm, sym)
+local function load_palette(asm)
 	asm:add_line()
-	sym.load_palette = "load_palette"
-	asm:label(sym.load_palette)
+	asm:label("load_palette") do
+		asm:poke("$8198", "#$3f")
+		asm:poke("$8198", "#$00")
+		asm:poke("$8199", "#$0e")
+		asm:poke("$8199", "#$30")
+		asm:poke("$8198", "#$3f")
+		asm:poke("$8198", "#$11")
+		asm:poke("$8199", "#$30")
+	end
+	asm:rts()
+	asm:add_line()
+end
 
-	local palette = {
-		{addr="$8198", val={"#$3f", "#$00"}},
-		{addr="$8199", val={"#$0e", "#$30"}},
-		{addr="$8198", val={"#$3f", "#$11"}},
-		{addr="$8199", val={"#$30"}},
-	}
 
-	for i in ipairs(palette) do
-		for j in ipairs(palette[i].val) do
-			asm:lda(palette[i].val[j])
-			asm:sta(palette[i].addr)
+
+local function load_hello(asm)
+	asm:add_line()
+	asm:label("load_hello") do
+		asm:poke("$8198", "#$21")
+		asm:poke("$8198", "#$03")
+		asm:ldx("#$00")
+		asm:add_line()
+		local loop = asm:clabel("loop") do
+			asm:poke("$8199", "hello,x")
+			asm:inx()
+			asm:lda("hello,x")
+			asm:cmp("#$00")
+			asm:bne(loop)
 		end
 	end
-
 	asm:rts()
 	asm:add_line()
 end
 
 
 
-local function load_hello(asm, sym)
-	asm:add_line()
-	asm:label("load_hello")
-	asm:lda("#$21")
-	asm:sta("$8198")
-	asm:lda("#$03")
-	asm:sta("$8198")
-	asm:ldx("#$00")
-	asm:add_line()
-	asm:label("load_hello_loop") do
-		asm:lda("hello,x")
-		asm:sta("$8199")
-		asm:inx()
-		asm:lda("hello,x")
-		asm:cmp("#$00")
-		asm:bne("load_hello_loop")
-	end
-	asm:rts()
-	asm:add_line()
-end
-
-
-
-local function init_hello(asm, sym)
+local function init_hello(asm)
 	asm:add_line()
 	asm:label("hello")
 	local hello_tbl = {}
@@ -61,20 +51,47 @@ local function init_hello(asm, sym)
 	until string.len(hello) == #hello_tbl
 	for k,v in pairs(hello_tbl) do
 		asm:byte(v)
+		asm:add_comment(hello)
 	end
 	asm:add_line()
 end
 
 
 
+local function main(asm)
+	asm:add_line()
+	asm:label("main")
+
+	asm:jsr("vwait")
+	asm:jsr("load_palette")
+
+	asm:jsr("vwait")
+	asm:jsr("load_hello")
+
+	asm:jsr("vwait")
+	asm:jmp("main")
+
+	asm:brk() --lol
+	asm:add_line()
+end
+
+
+
 return {
-	startup = function(asm, sym)
-		init_hello(asm, sym)
-		load_palette(asm, sym)
-		load_hello(asm, sym)
+	init = function(asm)
+		init_hello(asm)
 	end,
 
-	chars = function(asm, sym)
+	lib = function(asm)
+		load_palette(asm)
+		load_hello(asm)
+	end,
+
+	go = function(asm)
+		main(asm)
+	end,
+
+	chars = function(asm)
 		asm:incbin("ascii.chr")
 	end,
 }
